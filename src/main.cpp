@@ -51,7 +51,7 @@ int main(int argc, char **argv)
     parser.add_argument("--awesome").help("Location of the awesome binary").default_value("awesome").metavar("PATH");
 
     // Xephyr Parameters
-    parser.add_argument("--display").help("Display to use").metavar("NUMBER").scan<'d', std::size_t>();
+    parser.add_argument("--display").help("Display to use").metavar("NUMBER").scan<'u', std::size_t>();
     parser.add_argument("--size").help("Xephyr window size").default_value("1920x1080").metavar("SIZE");
 
     // Awesome Parameters
@@ -100,7 +100,7 @@ int main(int argc, char **argv)
         std::cout << "Resolved config sym-link to " << config << std::endl;
     }
 
-    auto display = parser.present<int>("--display");
+    auto display = parser.present<std::size_t>("--display");
 
     if (!display)
     {
