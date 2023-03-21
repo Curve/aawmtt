@@ -29,7 +29,7 @@ The original [awmtt](https://github.com/gmdfalk/awmtt) as well as [awmtt-ng](htt
 
 ### Packages
 
-- [AUR]()
+- [AUR](https://aur.archlinux.org/packages/aawmtt)
 
 ### Dependencies
 
