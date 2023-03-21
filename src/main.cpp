@@ -4,6 +4,8 @@
 #include "constants.hpp"
 
 #include <regex>
+#include <chrono>
+#include <thread>
 #include <csignal>
 #include <fmt/format.h>
 #include <sys/inotify.h>
@@ -49,7 +51,7 @@ int main(int argc, char **argv)
     parser.add_argument("--awesome").help("Location of the awesome binary").default_value("awesome").metavar("PATH");
 
     // Xephyr Parameters
-    parser.add_argument("--display").help("Display to use").metavar("NUMBER").scan<'d', int>();
+    parser.add_argument("--display").help("Display to use").metavar("NUMBER").scan<'d', std::size_t>();
     parser.add_argument("--size").help("Xephyr window size").default_value("1920x1080").metavar("SIZE");
 
     // Awesome Parameters
@@ -119,6 +121,11 @@ int main(int argc, char **argv)
     awesome = std::make_unique<awmtt::process>(std::vector<std::string>{"-c", config.string(), "--search", config.parent_path().string()});
 
     xephyr->start(parser.get("--xephyr"));
+
+    while (!awmtt::xorg::open(display.value()))
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
 
     // NOLINTNEXTLINE
     setenv("DISPLAY", fmt::format(":{}", display.value()).c_str(), true);
