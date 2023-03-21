@@ -155,7 +155,7 @@ int main(int argc, char **argv)
                 return;
             }
 
-            std::cout << "[awmtt] Detected change, restarting awesome" << std::endl;
+            std::cout << "[aawmtt] Detected change, restarting awesome" << std::endl;
             awesome->restart();
         });
 

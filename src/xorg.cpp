@@ -10,10 +10,11 @@ namespace awmtt
         //? This is kind of retarded but since I couldn't find any other way to list all displays, we'll have to resort to this...
         for (auto i = 0u; max > i; i++)
         {
-            const auto *display = XOpenDisplay(fmt::format(":{}", i).c_str());
+            auto *display = XOpenDisplay(fmt::format(":{}", i).c_str());
 
             if (display)
             {
+                XCloseDisplay(display);
                 continue;
             }
 
