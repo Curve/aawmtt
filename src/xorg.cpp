@@ -21,7 +21,7 @@ namespace awmtt
 
     display::~display()
     {
-        if (!m_impl)
+        if (!m_impl || !m_impl->display)
         {
             return;
         }

@@ -72,7 +72,7 @@ int main(int argc, char **args)
 
     if (display_fut.wait_for(5s) != std::future_status::ready)
     {
-        awmtt::logger::get()->error("Timed out waiting for display");
+        awmtt::logger::get()->error("Timed out waiting for display, did xephyr start correctly?");
         stop_source.request_stop();
         return 1;
     }
