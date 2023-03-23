@@ -1,34 +1,30 @@
+#include "logger.hpp"
 #include "inotify.hpp"
 
-#include <poll.h>
-#include <unistd.h>
-#include <sys/inotify.h>
-
+#include <mutex>
+#include <vector>
 #include <thread>
-#include <atomic>
 #include <iostream>
-#include <functional>
-#include <lockpp/lock.hpp>
+
+#include <poll.h>
+#include <sys/inotify.h>
 
 namespace awmtt
 {
     struct inotify::impl
     {
         int fd;
-        std::thread thread;
-        std::vector<int> watched;
+        std::vector<int> directories;
 
       public:
-        std::atomic_bool stop;
-        lockpp::lock<std::function<void(std::uint32_t mask)>> callback;
+        std::mutex mutex;
+        std::function<void()> callback;
+
+      public:
+        std::jthread thread;
     };
 
     inotify::inotify() : m_impl(std::make_unique<impl>()) {}
-
-    inotify::inotify(inotify &&other) noexcept : m_impl(std::move(other.m_impl))
-    {
-        other.m_impl.reset();
-    }
 
     inotify::~inotify()
     {
@@ -37,91 +33,78 @@ namespace awmtt
             return;
         }
 
-        m_impl->stop = true;
-
-        if (m_impl->thread.joinable())
+        for (const auto &directory : m_impl->directories)
         {
-            m_impl->thread.join();
-        }
-
-        for (const auto &watched : m_impl->watched)
-        {
-            inotify_rm_watch(m_impl->fd, watched);
+            inotify_rm_watch(m_impl->fd, directory);
         }
 
         close(m_impl->fd);
     }
 
-    void inotify::start()
+    inotify::inotify(inotify &&other) noexcept : m_impl(std::move(other.m_impl))
+    {
+        other.m_impl.reset();
+    }
+
+    void inotify::watch(const std::filesystem::path &path)
+    {
+        inotify_add_watch(m_impl->fd, path.c_str(), IN_MODIFY);
+    }
+
+    void inotify::set_callback(std::function<void()> &&callback)
+    {
+        std::lock_guard lock(m_impl->mutex);
+        m_impl->callback = std::move(callback);
+    }
+
+    std::optional<inotify> inotify::init(std::chrono::seconds timeout)
     {
         constexpr std::uint32_t EVENT_SIZE = sizeof(inotify_event);
         constexpr std::uint32_t EVENT_BUF_LEN = 1024 * (EVENT_SIZE + 16);
 
-        m_impl->thread = std::thread([this]() {
-            pollfd fs[1] = {pollfd{.fd = m_impl->fd, .events = POLLIN, .revents = {}}};
+        auto fd = inotify_init1(IN_CLOEXEC);
 
-            while (!m_impl->stop)
+        if (fd < 0)
+        {
+            return std::nullopt;
+        }
+
+        auto rtn = inotify{};
+        rtn.m_impl->fd = fd;
+
+        rtn.m_impl->thread = std::jthread{[impl = rtn.m_impl.get(), timeout](const std::stop_token &token) {
+            pollfd fs[1] = {pollfd{.fd = impl->fd, .events = POLLIN, .revents = {}}};
+
+            while (!token.stop_requested())
             {
-                auto status = poll(fs, 1, 1000);
+                auto status = poll(fs, 1, static_cast<int>(timeout.count()));
 
-                if (status == 0)
+                if (!status)
                 {
                     continue;
                 }
 
                 if (status == -1)
                 {
-                    std::cerr << "poll() error: " << errno << std::endl;
+                    logger::get()->error("poll() failed with: {} ({})", errno, status);
                     continue;
                 }
 
                 char buffer[EVENT_BUF_LEN];
-                auto len = read(m_impl->fd, buffer, EVENT_BUF_LEN);
+                read(impl->fd, buffer, EVENT_BUF_LEN);
 
-                if (len < 0)
+                std::lock_guard guard(impl->mutex);
+
+                if (!impl->callback)
                 {
-                    std::cerr << "read() error: " << errno << std::endl;
                     continue;
                 }
 
-                for (auto i = 0u; i < len;)
-                {
-                    auto *event = reinterpret_cast<inotify_event *>(&buffer[i]);
-                    auto callback = m_impl->callback.read();
-
-                    if (*callback)
-                    {
-                        (*callback)(event->mask);
-                    }
-
-                    i += EVENT_SIZE + event->len;
-                }
+                impl->callback();
             }
-        });
-    }
 
-    void inotify::watch(const std::filesystem::path &path, int flags)
-    {
-        m_impl->watched.emplace_back(inotify_add_watch(m_impl->fd, path.c_str(), flags));
-    }
-
-    void inotify::on_change(std::function<void(uint32_t mask)> &&callback)
-    {
-        m_impl->callback.assign(std::move(callback));
-    }
-
-    tl::expected<inotify, int> inotify::init()
-    {
-        // NOLINTNEXTLINE
-        auto fd = inotify_init();
-
-        if (fd < 0)
-        {
-            return tl::make_unexpected(errno);
-        }
-
-        auto rtn = inotify{};
-        rtn.m_impl->fd = fd;
+            logger::get()->debug("inotify finished");
+        }};
 
         return rtn;
     }

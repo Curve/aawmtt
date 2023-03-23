@@ -1,175 +1,122 @@
-#include "xorg.hpp"
-#include "process.hpp"
 #include "inotify.hpp"
-#include "constants.hpp"
+#include "process.hpp"
+#include "parser.hpp"
+#include "logger.hpp"
+#include "utils.hpp"
+#include "xorg.hpp"
 
-#include <regex>
-#include <chrono>
-#include <thread>
-#include <csignal>
 #include <fmt/format.h>
-#include <sys/inotify.h>
-#include <argparse/argparse.hpp>
+#include <filesystem>
 
-namespace fs = std::filesystem;
-
-std::unique_ptr<awmtt::process> xephyr;
-std::unique_ptr<awmtt::process> awesome;
-std::unique_ptr<awmtt::inotify> watcher;
-
-void setup_sigint()
+int main(int argc, char **args)
 {
-    struct sigaction sig_handler;
+    namespace fs = std::filesystem;
+    using namespace std::chrono_literals;
 
-    sig_handler.sa_handler = [](int) {
-        if (xephyr)
-        {
-            xephyr.reset();
-        }
-        if (awesome)
-        {
-            awesome.reset();
-        }
-        if (watcher)
-        {
-            watcher.reset();
-        }
-    };
+    auto parsed = awmtt::parse(argc, args);
 
-    sigemptyset(&sig_handler.sa_mask);
-    sig_handler.sa_flags = 0;
-
-    sigaction(SIGINT, &sig_handler, nullptr);
-}
-
-int main(int argc, char **argv)
-{
-    argparse::ArgumentParser parser(std::string{awmtt::name}, std::string{awmtt::version});
-
-    // Binaries
-    parser.add_argument("--xephyr").help("Location of the xephyr binary").default_value("Xephyr").metavar("PATH");
-    parser.add_argument("--awesome").help("Location of the awesome binary").default_value("awesome").metavar("PATH");
-
-    // Xephyr Parameters
-    parser.add_argument("--display").help("Display to use").metavar("NUMBER").scan<'u', std::size_t>();
-    parser.add_argument("--size").help("Xephyr window size").default_value("1920x1080").metavar("SIZE");
-
-    // Awesome Parameters
-    parser.add_argument("--config").help("AwesomeWM config to load").default_value("~/.config/awesome/rc.lua").metavar("PATH");
-
-    parser.add_argument("--reload").help("Enable auto-reload").implicit_value(true).default_value(true);
-    parser.add_argument("--recursive").help("Should auto-reload be recursive").implicit_value(true).default_value(true);
-    parser.add_argument("--watch").help("Directory to watch for live reload").default_value("~/.config/awesome").metavar("PATH");
-
-    try
+    if (!parsed)
     {
-        parser.parse_args(argc, argv);
-    }
-    catch (const std::runtime_error &err)
-    {
-        std::cerr << err.what() << std::endl;
-        std::cerr << parser;
         return 1;
     }
 
-    auto size = parser.get("--size");
+    // TODO: Sig Handler
 
-    if (!std::regex_match(size, std::regex{R"re(\d+x\d+)re"}))
+    auto config = awmtt::parse_path(parsed->get("--config"));
+    auto watch = config.parent_path();
+
+    if (auto parsed_watch = parsed->present("--watch"))
     {
-        std::cerr << "Specified size is invalid" << std::endl;
+        watch = awmtt::parse_path(parsed_watch.value());
+    }
+
+    if (!fs::exists(config))
+    {
+        awmtt::logger::get()->error("Config '{}' doesn't exist", config.string());
         return 1;
     }
 
-    const auto regex = std::regex{"~"};
-    // NOLINTNEXTLINE
-    const auto *home = std::getenv("HOME");
+    auto reload = parsed->get<bool>("--reload");
+    auto recursive = parsed->get<bool>("--recursive");
 
-    auto reload = parser.get<bool>("--reload");
-    auto watch = fs::path{std::regex_replace(parser.get("--watch"), regex, home)};
-    auto config = fs::path{std::regex_replace(parser.get("--config"), regex, home)};
-
-    if (reload && fs::is_symlink(watch))
+    if (!fs::exists(watch))
     {
-        watch = fs::read_symlink(watch);
-        std::cout << "Resolved watch sym-link to " << config << std::endl;
+        awmtt::logger::get()->warn("Watch directory '{}' doesn't exist", watch.string());
+        reload = false;
     }
 
-    if (fs::is_symlink((config)))
-    {
-        config = fs::read_symlink(config);
-        std::cout << "Resolved config sym-link to " << config << std::endl;
-    }
+    auto display_id = parsed->present<std::size_t>("--display");
 
-    auto display = parser.present<std::size_t>("--display");
-
-    if (!display)
+    if (!display_id)
     {
-        if (auto free = awmtt::xorg::find_free_display())
+        awmtt::logger::get()->info("Searching for free display");
+        auto free = awmtt::display::find();
+
+        if (!free)
         {
-            display = free;
-        }
-        else
-        {
-            std::cerr << "Failed to find free display" << std::endl;
+            awmtt::logger::get()->error("Failed to find free display");
             return 1;
         }
+
+        display_id = free.value();
     }
 
-    std::cout << "Using display: " << display.value() << std::endl;
+    awmtt::logger::get()->info("Using display: {}", display_id.value());
 
-    xephyr = std::make_unique<awmtt::process>(std::vector<std::string>{fmt::format(":{}", display.value()), "-screen", size, "-ac", "-br", "-noreset"});
-    awesome = std::make_unique<awmtt::process>(std::vector<std::string>{"-c", config.string(), "--search", config.parent_path().string()});
+    auto size = parsed->get("--size");
 
-    xephyr->start(parser.get("--xephyr"));
+    auto xephyr = awmtt::process(parsed->get("--xephyr"));
+    xephyr.start({fmt::format(":{}", display_id.value()), "-screen", size, "-ac", "-br", "-noreset"});
 
-    while (!awmtt::xorg::open(display.value()))
+    auto [display_fut, stop_source] = awmtt::display::connect(display_id.value());
+
+    if (display_fut.wait_for(5s) != std::future_status::ready)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        awmtt::logger::get()->error("Timed out waiting for display");
+        stop_source.request_stop();
+        return 1;
     }
 
-    // NOLINTNEXTLINE
-    setenv("DISPLAY", fmt::format(":{}", display.value()).c_str(), true);
-    awesome->start(parser.get("--awesome"));
+    awmtt::logger::get()->info("Display is ready!");
+    auto display = display_fut.get();
+    display.use();
 
-    setup_sigint();
+    auto awesome = awmtt::process(parsed->get("--awesome"));
+    awesome.start({"-c", config, "--search", config.parent_path()});
+
+    std::optional<awmtt::inotify> inotify;
 
     if (reload)
     {
-        auto inotify = awmtt::inotify::init();
-
-        if (!inotify.has_value())
+        if (auto rtn = awmtt::inotify::init(1s))
         {
-            std::cerr << "Failed to setup inotify watcher: " << inotify.error() << std::endl;
-            return 1;
-        }
+            inotify.emplace(std::move(rtn.value()));
+            inotify->watch(watch);
 
-        watcher = std::make_unique<awmtt::inotify>(std::move(inotify.value()));
-        watcher->watch(watch, IN_MODIFY);
-
-        for (const auto &entry : fs::recursive_directory_iterator{watch})
-        {
-            if (!entry.is_directory())
+            if (recursive)
             {
-                continue;
+                for (const auto &entry : fs::recursive_directory_iterator{watch})
+                {
+                    if (!entry.is_directory())
+                    {
+                        continue;
+                    }
+
+                    inotify->watch(entry);
+                }
             }
 
-            watcher->watch(entry, IN_MODIFY);
+            inotify->set_callback([&]() {
+                awmtt::logger::get()->info("Detected changes, restarting awesome");
+                awesome.restart();
+            });
+
+            awmtt::logger::get()->debug("Watching for changes");
         }
-
-        watcher->on_change([](auto) {
-            if (!awesome)
-            {
-                return;
-            }
-
-            std::cout << "[aawmtt] Detected change, restarting awesome" << std::endl;
-            awesome->restart();
-        });
-
-        watcher->start();
     }
 
-    xephyr->wait();
+    awmtt::logger::get()->debug("Waiting for xephyr");
+    xephyr.wait();
 
     return 0;
 }

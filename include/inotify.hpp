@@ -1,9 +1,8 @@
 #pragma once
 #include <memory>
-#include <cstdint>
+#include <optional>
 #include <functional>
 #include <filesystem>
-#include <tl/expected.hpp>
 
 namespace awmtt
 {
@@ -18,19 +17,18 @@ namespace awmtt
         inotify();
 
       public:
-        inotify(inotify &&) noexcept;
-
-      public:
         ~inotify();
 
       public:
-        void start();
+        inotify(inotify &&) noexcept;
 
       public:
-        void watch(const std::filesystem::path &, int flags);
-        void on_change(std::function<void(std::uint32_t mask)> &&);
+        void watch(const std::filesystem::path &);
 
       public:
-        static tl::expected<inotify, int> init();
+        void set_callback(std::function<void()> &&);
+
+      public:
+        static std::optional<inotify> init(std::chrono::seconds timeout);
     };
 } // namespace awmtt

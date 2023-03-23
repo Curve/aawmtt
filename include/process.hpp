@@ -1,29 +1,32 @@
 #pragma once
-#include <memory>
 #include <string>
 #include <vector>
-#include <filesystem>
+#include <memory>
 
 namespace awmtt
 {
     class process
     {
         struct impl;
+        using args_t = std::vector<std::string>;
 
       private:
         std::unique_ptr<impl> m_impl;
 
       public:
-        ~process();
+        process(std::string binary);
 
       public:
-        process(std::vector<std::string> args);
+        ~process();
 
       public:
         void wait();
         void restart();
 
       public:
-        void start(const std::filesystem::path &binary);
+        template <bool Force> void stop();
+
+      public:
+        void start(args_t args);
     };
 } // namespace awmtt
