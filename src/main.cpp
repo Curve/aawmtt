@@ -1,3 +1,4 @@
+#include "sighandler.hpp"
 #include "inotify.hpp"
 #include "process.hpp"
 #include "parser.hpp"
@@ -98,7 +99,11 @@ int main(int argc, char **args)
         }
     }
 
-    awmtt::logger::get()->debug("Waiting for xephyr");
+    awmtt::signals::setup(SIGINT, [&] {
+        awmtt::logger::get()->warn("Received SIGINT, forcefully exiting");
+        awesome.stop<true>();
+        xephyr.stop<true>();
+    });
 
     awmtt::logger::get()->debug("Attached to xephyr");
     xephyr.wait();
