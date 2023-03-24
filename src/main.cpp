@@ -13,41 +13,14 @@ int main(int argc, char **args)
     namespace fs = std::filesystem;
     using namespace std::chrono_literals;
 
-    auto parsed = awmtt::parse(argc, args);
+    auto settings = awmtt::parse(argc, args);
 
-    if (!parsed)
+    if (!settings)
     {
         return 1;
     }
 
-    // TODO: Sig Handler
-
-    auto config = awmtt::parse_path(parsed->get("--config"));
-    auto watch = config.parent_path();
-
-    if (auto parsed_watch = parsed->present("--watch"))
-    {
-        watch = awmtt::parse_path(parsed_watch.value());
-    }
-
-    if (!fs::exists(config))
-    {
-        awmtt::logger::get()->error("Config '{}' doesn't exist", config.string());
-        return 1;
-    }
-
-    auto reload = parsed->get<bool>("--reload");
-    auto recursive = parsed->get<bool>("--recursive");
-
-    if (!fs::exists(watch))
-    {
-        awmtt::logger::get()->warn("Watch directory '{}' doesn't exist", watch.string());
-        reload = false;
-    }
-
-    auto display_id = parsed->present<std::size_t>("--display");
-
-    if (!display_id)
+    if (!settings->display)
     {
         awmtt::logger::get()->info("Searching for free display");
         auto free = awmtt::display::find();
@@ -58,44 +31,54 @@ int main(int argc, char **args)
             return 1;
         }
 
-        display_id = free.value();
+        settings->display = free.value();
     }
 
-    awmtt::logger::get()->info("Using display: {}", display_id.value());
+    awmtt::logger::get()->info("Using display: {}", settings->display.value());
 
-    auto size = parsed->get("--size");
+    auto xephyr = awmtt::process(settings->xephyr);
 
-    auto xephyr = awmtt::process(parsed->get("--xephyr"));
-    xephyr.start({fmt::format(":{}", display_id.value()), "-screen", size, "-ac", "-br", "-noreset"});
+    auto xephyr_args = std::vector<std::string>{fmt::format(":{}", settings->display.value()), "-screen", settings->size};
+    xephyr_args.insert(xephyr_args.end(), settings->xephyr_args.begin(), settings->xephyr_args.end());
 
-    auto [display_fut, stop_source] = awmtt::display::connect(display_id.value());
+    awmtt::logger::get()->debug("Using xephyr args: {}", fmt::join(xephyr_args, " "));
+    xephyr.start(xephyr_args);
 
-    if (display_fut.wait_for(5s) != std::future_status::ready)
+    auto [display_fut, stop_source] = awmtt::display::connect(settings->display.value());
+
+    if (auto status = display_fut.wait_for(5s); status != std::future_status::ready)
     {
-        awmtt::logger::get()->error("Timed out waiting for display, did xephyr start correctly?");
+        awmtt::logger::get()->error("Timed out ({}) waiting for display, did xephyr start correctly?", static_cast<int>(status));
         stop_source.request_stop();
         return 1;
     }
 
-    awmtt::logger::get()->info("Display is ready!");
+    awmtt::logger::get()->info("Display is ready");
     auto display = display_fut.get();
     display.use();
 
-    auto awesome = awmtt::process(parsed->get("--awesome"));
-    awesome.start({"-c", config, "--search", config.parent_path()});
+    auto awesome = awmtt::process(settings->awesome);
+
+    auto awesome_args = std::vector<std::string>{"-c", settings->config, "--search", settings->config.parent_path()};
+    awesome_args.insert(awesome_args.end(), settings->awesome_args.begin(), settings->awesome_args.end());
+
+    awmtt::logger::get()->debug("Using awesome args: {}", fmt::join(awesome_args, " "));
+    awesome.start(awesome_args);
 
     std::optional<awmtt::inotify> inotify;
 
-    if (reload)
+    if (settings->reload)
     {
         if (auto rtn = awmtt::inotify::init(1s))
         {
             inotify.emplace(std::move(rtn.value()));
-            inotify->watch(watch);
+            inotify->watch(settings->watch);
 
-            if (recursive)
+            if (settings->recursive)
             {
-                for (const auto &entry : fs::recursive_directory_iterator{watch})
+                awmtt::logger::get()->info("Using recursive watch");
+
+                for (const auto &entry : fs::recursive_directory_iterator{settings->watch})
                 {
                     if (!entry.is_directory())
                     {
@@ -106,16 +89,18 @@ int main(int argc, char **args)
                 }
             }
 
-            inotify->set_callback([&]() {
-                awmtt::logger::get()->info("Detected changes, restarting awesome");
+            inotify->set_callback([&](const std::string &file) {
+                awmtt::logger::get()->info("Detected changes on '{}', restarting awesome", file);
                 awesome.restart();
             });
 
-            awmtt::logger::get()->debug("Watching for changes");
+            awmtt::logger::get()->info("Watching for changes");
         }
     }
 
     awmtt::logger::get()->debug("Waiting for xephyr");
+
+    awmtt::logger::get()->debug("Attached to xephyr");
     xephyr.wait();
 
     return 0;
