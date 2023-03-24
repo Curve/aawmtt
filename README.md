@@ -49,7 +49,7 @@ cmake .. && cmake --build . --config Release
 
 ```
 aawmtt - v2.0
-Usage: ./build/aawmtt [OPTIONS]
+Usage: aawmtt [OPTIONS]
 
 Options:
   -h,--help                                                 Print this help message and exit
