@@ -46,12 +46,12 @@ cmake_policy(SET CMP0135 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
 
 FetchContent_Declare(fmt        GIT_REPOSITORY "https://github.com/fmtlib/fmt"              GIT_TAG "9.1.0")
-FetchContent_Declare(argparse   GIT_REPOSITORY "https://github.com/p-ranav/argparse"        GIT_TAG "e516556")
+FetchContent_Declare(cli11      GIT_REPOSITORY "https://github.com/CLIUtils/CLI11"          GIT_TAG "v2.3.2")
 FetchContent_Declare(reproc     GIT_REPOSITORY "https://github.com/DaanDeMeyer/reproc"      GIT_TAG "v14.2.4")
 FetchContent_Declare(spdlog     GIT_REPOSITORY "https://github.com/gabime/spdlog"           GIT_TAG "v1.11.0")
 
-FetchContent_MakeAvailable(reproc argparse fmt spdlog)
-target_link_libraries(${PROJECT_NAME} PRIVATE argparse reproc++ fmt spdlog::spdlog)
+FetchContent_MakeAvailable(reproc cli11 fmt spdlog)
+target_link_libraries(${PROJECT_NAME} PRIVATE CLI11::CLI11 reproc++ fmt spdlog::spdlog)
 
 find_package(X11 REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${X11_LIBRARIES})
