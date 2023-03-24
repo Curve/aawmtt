@@ -7,6 +7,7 @@
 #include <iostream>
 
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/inotify.h>
 
 namespace awmtt
@@ -18,7 +19,7 @@ namespace awmtt
 
       public:
         std::mutex mutex;
-        std::function<void()> callback;
+        std::function<void(const std::string &)> callback;
 
       public:
         std::jthread thread;
@@ -48,10 +49,10 @@ namespace awmtt
 
     void inotify::watch(const std::filesystem::path &path)
     {
-        inotify_add_watch(m_impl->fd, path.c_str(), IN_MODIFY);
+        inotify_add_watch(m_impl->fd, path.c_str(), IN_CLOSE_WRITE);
     }
 
-    void inotify::set_callback(std::function<void()> &&callback)
+    void inotify::set_callback(std::function<void(const std::string &)> &&callback)
     {
         std::lock_guard lock(m_impl->mutex);
         m_impl->callback = std::move(callback);
@@ -59,9 +60,6 @@ namespace awmtt
 
     std::optional<inotify> inotify::init(std::chrono::seconds timeout)
     {
-        constexpr std::uint32_t EVENT_SIZE = sizeof(inotify_event);
-        constexpr std::uint32_t EVENT_BUF_LEN = 1024 * (EVENT_SIZE + 16);
-
         auto fd = inotify_init1(IN_CLOEXEC);
 
         if (fd < 0)
@@ -90,17 +88,26 @@ namespace awmtt
                     continue;
                 }
 
-                char buffer[EVENT_BUF_LEN];
-                read(impl->fd, buffer, EVENT_BUF_LEN);
+                std::size_t len{};
+                ioctl(impl->fd, FIONREAD, &len);
+
+                auto buffer = std::make_unique<char[]>(len);
+                read(impl->fd, buffer.get(), len);
 
                 std::lock_guard guard(impl->mutex);
+                auto offset = 0u;
 
-                if (!impl->callback)
+                while (offset < len)
                 {
-                    continue;
-                }
+                    auto *event = reinterpret_cast<inotify_event *>(buffer.get() + offset);
 
-                impl->callback();
+                    if (impl->callback)
+                    {
+                        impl->callback(event->name);
+                    }
+
+                    offset += sizeof(inotify_event) + event->len;
+                }
             }
 
             logger::get()->debug("inotify finished");

@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <memory>
 #include <optional>
 #include <functional>
@@ -26,7 +27,7 @@ namespace awmtt
         void watch(const std::filesystem::path &);
 
       public:
-        void set_callback(std::function<void()> &&);
+        void set_callback(std::function<void(const std::string &)> &&);
 
       public:
         static std::optional<inotify> init(std::chrono::seconds timeout);
