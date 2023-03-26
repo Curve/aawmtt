@@ -22,7 +22,7 @@
 
 The original [awmtt](https://github.com/gmdfalk/awmtt) as well as [awmtt-ng](https://github.com/basaran/awmtt-ng) have several issues.
 
-1. Both of them seem to have issues with detecting free displays and will straight up ignore the display passed through "-D".
+1. awmtt-ng seems to have issues with detecting free displays and will straight up ignore the display passed through "-D".
 
 2. For me they both exit instantly when the config is a sym-link or somewhere else than in "~/.config/awesome".
 
