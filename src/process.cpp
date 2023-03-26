@@ -1,5 +1,6 @@
 #include "process.hpp"
 
+#include <csignal>
 #include <optional>
 #include <reproc++/reproc.hpp>
 
@@ -10,7 +11,6 @@ namespace awmtt
 
     struct process::impl
     {
-        args_t last_args;
         std::string binary;
         std::optional<reproc::process> process;
     };
@@ -41,10 +41,16 @@ namespace awmtt
         m_impl->process->wait(reproc::infinite);
     }
 
-    void process::restart()
+    void process::signal(int signal)
     {
-        stop<false>();
-        start(m_impl->last_args);
+        if (!m_impl->process)
+        {
+            return;
+        }
+
+        // NOLINTNEXTLINE
+        auto pid = m_impl->process->pid().first;
+        kill(pid, signal);
     }
 
     template <> void process::stop<false>()
@@ -71,14 +77,12 @@ namespace awmtt
         m_impl->process.reset();
     }
 
-    void process::start(args_t args)
+    void process::start(const args_t &args)
     {
         m_impl->process.emplace();
 
         auto params = args;
         params.insert(params.begin(), m_impl->binary);
-
-        m_impl->last_args = std::move(args);
 
         // NOLINTNEXTLINE
         m_impl->process->start(params, reproc::options{.redirect{.parent = true}});

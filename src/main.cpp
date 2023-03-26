@@ -92,7 +92,7 @@ int main(int argc, char **args)
 
             inotify->set_callback([&](const std::string &file) {
                 awmtt::logger::get()->info("Detected changes on '{}', restarting awesome", file);
-                awesome.restart();
+                awesome.signal(SIGHUP);
             });
 
             awmtt::logger::get()->info("Watching for changes");

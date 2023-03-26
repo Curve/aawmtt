@@ -21,12 +21,14 @@ namespace awmtt
 
       public:
         void wait();
-        void restart();
+
+      public:
+        void signal(int signal);
 
       public:
         template <bool Force> void stop();
 
       public:
-        void start(args_t args);
+        void start(const args_t &args);
     };
 } // namespace awmtt
