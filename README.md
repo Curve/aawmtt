@@ -59,6 +59,7 @@ Options:
   -s,--size TEXT [1920x1080]                                Size for the xephyr window
   -r,--reload BOOLEAN [1]                                   Enable/Disable auto-reload
   -R,--recursive BOOLEAN [1]                                Watch files recursively
+  -m,--restart-method ENUM [1]                              Method used to restart awesome (0 = restart, 1 = sighup)
   -c,--config TEXT [~/.config/awesome/rc.lua]               AwesomeWM config to load
   -w,--watch TEXT                                           Directory to watch for auto-reload
   --awesome-args TEXT ...                                   Additional arguments for awesome
