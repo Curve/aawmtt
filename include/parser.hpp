@@ -7,6 +7,12 @@
 
 namespace awmtt
 {
+    enum class restart_strategy
+    {
+        restart,
+        sighup,
+    };
+
     struct settings
     {
         std::string xephyr;
@@ -17,6 +23,7 @@ namespace awmtt
 
         std::filesystem::path config;
 
+        restart_strategy restart_method;
         std::vector<std::string> xephyr_args;
         std::vector<std::string> awesome_args;
 

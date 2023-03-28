@@ -24,6 +24,7 @@ namespace awmtt
 
         parser.add_option("-r,--reload", rtn.reload, "Enable/Disable auto-reload")->default_val(true);
         parser.add_option("-R,--recursive", rtn.recursive, "Watch files recursively")->default_val(true);
+        parser.add_option("-m,--restart-method", rtn.restart_method, "Method used to restart awesome (0 = restart, 1 = sighup)")->default_val(restart_strategy::sighup);
 
         std::string config;
         parser.add_option("-c,--config", config, "AwesomeWM config to load")->default_val("~/.config/awesome/rc.lua");

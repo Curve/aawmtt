@@ -12,6 +12,7 @@ namespace awmtt
     struct process::impl
     {
         std::string binary;
+        std::vector<std::string> last_args;
         std::optional<reproc::process> process;
     };
 
@@ -39,6 +40,17 @@ namespace awmtt
 
         // NOLINTNEXTLINE
         m_impl->process->wait(reproc::infinite);
+    }
+
+    void process::restart()
+    {
+        if (!m_impl->process)
+        {
+            return;
+        }
+
+        stop<false>();
+        start(m_impl->last_args);
     }
 
     void process::signal(int signal)
@@ -77,14 +89,14 @@ namespace awmtt
         m_impl->process.reset();
     }
 
-    void process::start(const args_t &args)
+    void process::start(args_t args)
     {
         m_impl->process.emplace();
 
         auto params = args;
         params.insert(params.begin(), m_impl->binary);
 
-        // NOLINTNEXTLINE
-        m_impl->process->start(params, reproc::options{.redirect{.parent = true}});
+        m_impl->last_args = std::move(args);
+        m_impl->process->start(params, reproc::options{.redirect{.parent = true}}); // NOLINT
     }
 } // namespace awmtt

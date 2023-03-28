@@ -21,6 +21,8 @@ int main(int argc, char **args)
         return 1;
     }
 
+    awmtt::logger::get()->info("Using restart strategy {}", static_cast<int>(settings->restart_method));
+
     if (!settings->display)
     {
         awmtt::logger::get()->info("Searching for free display");
@@ -92,7 +94,14 @@ int main(int argc, char **args)
 
             inotify->set_callback([&](const std::string &file) {
                 awmtt::logger::get()->info("Detected changes on '{}', restarting awesome", file);
-                awesome.signal(SIGHUP);
+
+                if (settings->restart_method == awmtt::restart_strategy::sighup)
+                {
+                    awesome.signal(SIGHUP);
+                    return;
+                }
+
+                awesome.restart();
             });
 
             awmtt::logger::get()->info("Watching for changes");

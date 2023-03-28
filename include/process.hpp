@@ -21,6 +21,7 @@ namespace awmtt
 
       public:
         void wait();
+        void restart();
 
       public:
         void signal(int signal);
@@ -29,6 +30,6 @@ namespace awmtt
         template <bool Force> void stop();
 
       public:
-        void start(const args_t &args);
+        void start(args_t args);
     };
 } // namespace awmtt
