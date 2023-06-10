@@ -30,6 +30,6 @@ namespace awmtt
         template <bool Force> void stop();
 
       public:
-        void start(args_t args);
+        bool start(args_t args);
     };
 } // namespace awmtt

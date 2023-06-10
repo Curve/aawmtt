@@ -1,3 +1,4 @@
+#include "logger.hpp"
 #include "process.hpp"
 
 #include <csignal>
@@ -89,7 +90,7 @@ namespace awmtt
         m_impl->process.reset();
     }
 
-    void process::start(args_t args)
+    bool process::start(args_t args)
     {
         m_impl->process.emplace();
 
@@ -97,6 +98,14 @@ namespace awmtt
         params.insert(params.begin(), m_impl->binary);
 
         m_impl->last_args = std::move(args);
-        m_impl->process->start(params, reproc::options{.redirect{.parent = true}}); // NOLINT
+        auto status = m_impl->process->start(params, reproc::options{.redirect{.parent = true}}); // NOLINT
+
+        if (!status)
+        {
+            return true;
+        }
+
+        logger::get()->error("Failed to start process '{}': {}", m_impl->binary, status.message());
+        return false;
     }
 } // namespace awmtt

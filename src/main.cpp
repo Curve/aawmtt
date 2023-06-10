@@ -45,7 +45,12 @@ int main(int argc, char **args)
     xephyr_args.insert(xephyr_args.end(), settings->xephyr_args.begin(), settings->xephyr_args.end());
 
     awmtt::logger::get()->debug("Using xephyr args: {}", fmt::join(xephyr_args, " "));
-    xephyr.start(xephyr_args);
+
+    if (!xephyr.start(xephyr_args))
+    {
+        awmtt::logger::get()->error("Failed to start xephyr");
+        return 1;
+    }
 
     auto [display_fut, stop_source] = awmtt::display::connect(settings->display.value());
 
@@ -66,7 +71,12 @@ int main(int argc, char **args)
     awesome_args.insert(awesome_args.end(), settings->awesome_args.begin(), settings->awesome_args.end());
 
     awmtt::logger::get()->debug("Using awesome args: {}", fmt::join(awesome_args, " "));
-    awesome.start(awesome_args);
+
+    if (!awesome.start(awesome_args))
+    {
+        awmtt::logger::get()->error("Failed to start awesome");
+        return 1;
+    }
 
     std::optional<awmtt::inotify> inotify;
 
