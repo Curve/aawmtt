@@ -1,0 +1,21 @@
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+name: Check AUR Package
+jobs:
+  test-aur:
+    runs-on: ubuntu-latest
+    container: greyltc/archlinux-aur:paru
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["cpp"]
+
+    steps:
+      - name: Install build dependencies
+        run: "pacman --noconfirm -Syu base-devel cmake gcc git make"
+
+      - name: Install Package
+        run: "aur-install aawmtt"
