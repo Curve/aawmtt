@@ -84,7 +84,7 @@ namespace awmtt
 
                 if (status == -1)
                 {
-                    logger::get()->error("poll() failed with: {} ({})", errno, status);
+                    logger::get()->error("poll() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
                     continue;
                 }
 
@@ -92,7 +92,19 @@ namespace awmtt
                 ioctl(impl->fd, FIONREAD, &len);
 
                 auto buffer = std::make_unique<char[]>(len);
-                read(impl->fd, buffer.get(), len);
+                auto rd = read(impl->fd, buffer.get(), len);
+
+                if (rd == -1)
+                {
+                    logger::get()->error("read() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
+                    continue;
+                }
+
+                if (rd == 0)
+                {
+                    logger::get()->debug("EOF reached");
+                    continue;
+                }
 
                 std::lock_guard guard(impl->mutex);
                 auto offset = 0u;
