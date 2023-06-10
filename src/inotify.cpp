@@ -96,7 +96,7 @@ namespace awmtt
 
                 if (rd == -1)
                 {
-                    logger::get()->error("read() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
+                    logger::get()->warn("read() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
                     continue;
                 }
 
