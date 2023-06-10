@@ -19,6 +19,8 @@ add_executable(${PROJECT_NAME} ${src})
 target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_20)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 20 CXX_EXTENSIONS OFF CXX_STANDARD_REQUIRED ON)
 
+target_compile_options(${PROJECT_NAME} PRIVATE -Wno-missing-field-initializers)
+
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror -pedantic -pedantic-errors -Wfatal-errors)
 endif()
@@ -39,18 +41,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE "include")
 # Link required libraries
 # -------------------------------------------------------------------------------------------------------------------------------
 
-include(FetchContent)
+include("cmake/cpm.cmake")
 
 set(REPROC++ ON)
-cmake_policy(SET CMP0135 NEW)
-set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
 
-FetchContent_Declare(fmt        GIT_REPOSITORY "https://github.com/fmtlib/fmt"              GIT_TAG "9.1.0")
-FetchContent_Declare(cli11      GIT_REPOSITORY "https://github.com/CLIUtils/CLI11"          GIT_TAG "v2.3.2")
-FetchContent_Declare(reproc     GIT_REPOSITORY "https://github.com/DaanDeMeyer/reproc"      GIT_TAG "v14.2.4")
-FetchContent_Declare(spdlog     GIT_REPOSITORY "https://github.com/gabime/spdlog"           GIT_TAG "v1.11.0")
+CPMAddPackage("gh:fmtlib/fmt#9.1.0")
+CPMAddPackage("gh:CLIUtils/CLI11@2.3.2")
+CPMAddPackage("gh:gabime/spdlog@1.11.0")
+CPMAddPackage("gh:DaanDeMeyer/reproc#1c07bdb")
 
-FetchContent_MakeAvailable(reproc cli11 fmt spdlog)
 target_link_libraries(${PROJECT_NAME} PRIVATE CLI11::CLI11 reproc++ fmt spdlog::spdlog)
 
 find_package(X11 REQUIRED)
