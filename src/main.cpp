@@ -1,130 +1,145 @@
-#include "sighandler.hpp"
-#include "inotify.hpp"
-#include "process.hpp"
-#include "parser.hpp"
-#include "logger.hpp"
-#include "utils.hpp"
 #include "xorg.hpp"
 
+#include "inotify.hpp"
+#include "process.hpp"
+
+#include "parser.hpp"
+#include "logger.hpp"
+#include "signal.hpp"
+
 #include <fmt/format.h>
-#include <filesystem>
 
-int main(int argc, char **args)
+using namespace awmtt;
+
+int main(int argc, char **argv)
 {
-    namespace fs = std::filesystem;
-    using namespace std::chrono_literals;
+    auto settings = parse(argc, argv);
 
-    auto settings = awmtt::parse(argc, args);
-
-    if (!settings)
+    if (!fs::exists(settings.config))
     {
+        logger::get()->error("Config does not exist");
         return 1;
     }
 
-    awmtt::logger::get()->info("Using restart strategy {}", static_cast<int>(settings->restart_method));
-
-    if (!settings->display)
+    if (!fs::exists(settings.watch))
     {
-        awmtt::logger::get()->info("Searching for free display");
-        auto free = awmtt::display::find();
+        logger::get()->warn("Watch directory does not exist");
+        settings.reload = false;
+    }
+
+    logger::get()->info("Using restart strategy {}", static_cast<int>(settings.restart));
+
+    if (!settings.display)
+    {
+        logger::get()->info("Searching for free display");
+        auto free = display::find();
 
         if (!free)
         {
-            awmtt::logger::get()->error("Failed to find free display");
+            logger::get()->error("Failed to find free display");
             return 1;
         }
 
-        settings->display = free.value();
+        settings.display = free.value();
     }
 
-    awmtt::logger::get()->info("Using display: {}", settings->display.value());
+    logger::get()->info("Using display: {}", settings.display.value());
 
-    auto xephyr = awmtt::process(settings->xephyr);
+    auto xephyr      = process(settings.xephyr);
+    auto xephyr_args = std::vector<std::string>{fmt::format(":{}", settings.display.value()), "-screen", settings.size};
 
-    auto xephyr_args = std::vector<std::string>{fmt::format(":{}", settings->display.value()), "-screen", settings->size};
-    xephyr_args.insert(xephyr_args.end(), settings->xephyr_args.begin(), settings->xephyr_args.end());
-
-    awmtt::logger::get()->debug("Using xephyr args: {}", fmt::join(xephyr_args, " "));
+    xephyr_args.insert(xephyr_args.end(), settings.xephyr_args.begin(), settings.xephyr_args.end());
+    logger::get()->debug("Using xephyr args: {}", fmt::join(xephyr_args, " "));
 
     if (!xephyr.start(xephyr_args))
     {
-        awmtt::logger::get()->error("Failed to start xephyr");
+        logger::get()->error("Failed to start xephyr");
         return 1;
     }
 
-    auto [display_fut, stop_source] = awmtt::display::connect(settings->display.value());
+    auto [display, token] = display::connect(settings.display.value());
 
-    if (auto status = display_fut.wait_for(5s); status != std::future_status::ready)
+    if (auto status = display.wait_for(std::chrono::seconds(5)); status != std::future_status::ready)
     {
-        awmtt::logger::get()->error("Timed out ({}) waiting for display, did xephyr start correctly?", static_cast<int>(status));
-        stop_source.request_stop();
+        logger::get()->error("Timed out waiting for display, did xephyr start correctly?");
+        token.request_stop();
         return 1;
     }
 
-    awmtt::logger::get()->info("Display is ready");
-    auto display = display_fut.get();
-    display.use();
+    display.get().use();
 
-    auto awesome = awmtt::process(settings->awesome);
+    auto awesome      = process(settings.awesome);
+    auto awesome_args = std::vector<std::string>{"-c", settings.config, "--search", settings.config.parent_path()};
 
-    auto awesome_args = std::vector<std::string>{"-c", settings->config, "--search", settings->config.parent_path()};
-    awesome_args.insert(awesome_args.end(), settings->awesome_args.begin(), settings->awesome_args.end());
-
-    awmtt::logger::get()->debug("Using awesome args: {}", fmt::join(awesome_args, " "));
+    awesome_args.insert(awesome_args.end(), settings.awesome_args.begin(), settings.awesome_args.end());
+    logger::get()->debug("Using awesome args: {}", fmt::join(awesome_args, " "));
 
     if (!awesome.start(awesome_args))
     {
-        awmtt::logger::get()->error("Failed to start awesome");
+        logger::get()->error("Failed to start awesome");
         return 1;
     }
 
-    std::optional<awmtt::inotify> inotify;
+    std::optional<inotify> watcher;
 
-    if (settings->reload)
+    if (settings.reload)
     {
-        if (auto rtn = awmtt::inotify::init(1s))
+        auto rtn = inotify::init();
+
+        if (!rtn)
         {
-            inotify.emplace(std::move(rtn.value()));
-            inotify->watch(settings->watch);
+            logger::get()->error("Failed to initialize watcher");
+            return 1;
+        }
 
-            if (settings->recursive)
+        watcher.emplace(std::move(rtn.value()));
+        watcher->watch(settings.watch);
+
+        if (settings.recursive)
+        {
+            logger::get()->info("Using recursive watch");
+
+            for (const auto &entry : fs::recursive_directory_iterator{settings.watch})
             {
-                awmtt::logger::get()->info("Using recursive watch");
-
-                for (const auto &entry : fs::recursive_directory_iterator{settings->watch})
+                if (!entry.is_directory())
                 {
-                    if (!entry.is_directory())
-                    {
-                        continue;
-                    }
-
-                    inotify->watch(entry);
+                    continue;
                 }
+
+                watcher->watch(entry);
             }
+        }
 
-            inotify->set_callback([&](const std::string &file) {
-                awmtt::logger::get()->info("Detected changes on '{}', restarting awesome", file);
+        watcher->start(
+            [&](const auto &file)
+            {
+                logger::get()->info("Detected changes on '{}', restarting awesome", file);
 
-                if (settings->restart_method == awmtt::restart_strategy::sighup)
+                if (settings.restart == strategy::signal)
                 {
                     awesome.signal(SIGHUP);
                     return;
                 }
 
                 awesome.restart();
-            });
+            },
+            std::chrono::seconds(1));
 
-            awmtt::logger::get()->info("Watching for changes");
-        }
+        logger::get()->info("Watching for changes");
     }
 
-    awmtt::signals::setup(SIGINT, [&] {
-        awmtt::logger::get()->warn("Received SIGINT, forcefully exiting");
-        awesome.stop<true>();
-        xephyr.stop<true>();
-    });
+    signal::setup(SIGINT,
+                  [&]
+                  {
+                      logger::get()->warn("Received SIGINT, forcefully exiting");
 
-    awmtt::logger::get()->debug("Attached to xephyr");
+                      awesome.stop<true>();
+                      xephyr.stop<true>();
+
+                      watcher.reset();
+                  });
+
+    logger::get()->debug("Attached to xephyr");
     xephyr.wait();
 
     return 0;
