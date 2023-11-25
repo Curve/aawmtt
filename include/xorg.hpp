@@ -1,7 +1,6 @@
 #pragma once
 #include <future>
 #include <memory>
-#include <cstdint>
 #include <utility>
 #include <optional>
 #include <stop_token>
