@@ -6,10 +6,10 @@ namespace awmtt
 {
     class logger
     {
-        static std::unique_ptr<logger> m_instance;
+        struct impl;
 
       private:
-        std::unique_ptr<spdlog::logger> m_logger;
+        std::unique_ptr<impl> m_impl;
 
       private:
         logger();
