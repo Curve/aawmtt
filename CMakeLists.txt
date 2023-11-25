@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aawmtt LANGUAGES CXX VERSION 2.5)
+project(aawmtt LANGUAGES CXX VERSION 2.6)
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # We only support UNIX platforms

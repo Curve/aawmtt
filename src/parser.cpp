@@ -126,7 +126,7 @@ Options:
 
         if (auto arg = get(args, "-x", "--xephyr"); arg)
         {
-            rtn.xephyr = parse_path(arg.value());
+            rtn.xephyr = arg.value();
         }
         if (auto arg = get(args, "--xephyr-args"); arg)
         {
@@ -135,7 +135,7 @@ Options:
 
         if (auto arg = get(args, "-a", "--awesome"); arg)
         {
-            rtn.awesome = parse_path(arg.value());
+            rtn.awesome = arg.value();
         }
         if (auto arg = get(args, "--awesome-args"); arg)
         {
