@@ -17,6 +17,7 @@
 
 - Live Reload
 - Proper Display detection
+- Configurable Restart Mode
 
 ## Why?
 
@@ -48,22 +49,28 @@ cmake .. && cmake --build . --config Release
 ### Usage
 
 ```
-aawmtt - v2.0
-Usage: aawmtt [OPTIONS]
+Usage: 
+    aawmtt 
+    aawmtt [...]
 
 Options:
-  -h,--help                                                 Print this help message and exit
-  -x,--xephyr TEXT [Xephyr]                                 Location of xephyr binary
-  -a,--awesome TEXT [awesome]                               Location of awesome binary
-  -d,--display UINT                                         The Xorg display to use
-  -s,--size TEXT [1920x1080]                                Size for the xephyr window
-  -r,--reload BOOLEAN [1]                                   Enable/Disable auto-reload
-  -R,--recursive BOOLEAN [1]                                Watch files recursively
-  -m,--restart-method ENUM [1]                              Method used to restart awesome (0 = restart, 1 = sighup)
-  -c,--config TEXT [~/.config/awesome/rc.lua]               AwesomeWM config to load
-  -w,--watch TEXT                                           Directory to watch for auto-reload
-  --awesome-args TEXT ...                                   Additional arguments for awesome
-  --xephyr-args TEXT [[-ac,-br,-noreset]]  ...              Arguments for xephyr
+    -h --help                   Print usage
+    
+    -x --xephyr     <path>      Explicitly specify xephyr path 
+    --xephyr-args   <args>      Arguments used to invoke xephyr (Default: "-ac -br -noreset")
+    
+    -a --awesome    <path>      Explicitly specify awesome path
+    --awesome-args  <args>      Additional awesome arguments (e.g. "--screen off")
+    
+    -c --config     <path>      Location of the awesome config to use (Default: "~/.config/awesome/rc.lua")
+    -w --watch      <path>      Directory to watch for changes (Default: Parent directory of config)
+    -m --mode       <enum>      Awesome restart strategy ["r" = restart, "s" = SIGHUP] (Default: "s")
+    
+    -s --size       <string>    Xephyr window size (Default: "1920x1080")
+    -d --display    <number>    X11 Display to use (Default: Free Display)
+    
+    --no-reload                 Disable automatic reload
+    --no-recursive              Disable recursive directory watch
 ```
 
 ### Screenshots
