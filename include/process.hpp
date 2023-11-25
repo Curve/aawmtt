@@ -8,7 +8,6 @@ namespace awmtt
     class process
     {
         struct impl;
-        using args_t = std::vector<std::string>;
 
       private:
         std::unique_ptr<impl> m_impl;
@@ -30,6 +29,6 @@ namespace awmtt
         template <bool Force> void stop();
 
       public:
-        bool start(args_t args);
+        bool start(std::vector<std::string> args);
     };
 } // namespace awmtt

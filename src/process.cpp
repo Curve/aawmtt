@@ -7,8 +7,11 @@
 
 namespace awmtt
 {
-    template <> void process::stop<false>();
-    template <> void process::stop<true>();
+    template <>
+    void process::stop<false>();
+
+    template <>
+    void process::stop<true>();
 
     struct process::impl
     {
@@ -34,12 +37,11 @@ namespace awmtt
 
     void process::wait()
     {
-        if (!m_impl->process)
+        if (!m_impl || !m_impl->process)
         {
             return;
         }
 
-        // NOLINTNEXTLINE
         m_impl->process->wait(reproc::infinite);
     }
 
@@ -50,7 +52,7 @@ namespace awmtt
             return;
         }
 
-        stop<false>();
+        stop<true>();
         start(m_impl->last_args);
     }
 
@@ -61,36 +63,35 @@ namespace awmtt
             return;
         }
 
-        // NOLINTNEXTLINE
         auto pid = m_impl->process->pid().first;
         kill(pid, signal);
     }
 
-    template <> void process::stop<false>()
+    template <>
+    void process::stop<false>()
     {
-        if (!m_impl->process)
+        if (m_impl->process.has_value())
         {
             return;
         }
 
-        // NOLINTNEXTLINE
         m_impl->process->terminate();
         m_impl->process.reset();
     }
 
-    template <> void process::stop<true>()
+    template <>
+    void process::stop<true>()
     {
         if (!m_impl->process)
         {
             return;
         }
 
-        // NOLINTNEXTLINE
         m_impl->process->kill();
         m_impl->process.reset();
     }
 
-    bool process::start(args_t args)
+    bool process::start(std::vector<std::string> args)
     {
         m_impl->process.emplace();
 
@@ -98,7 +99,7 @@ namespace awmtt
         params.insert(params.begin(), m_impl->binary);
 
         m_impl->last_args = std::move(args);
-        auto status = m_impl->process->start(params, reproc::options{.redirect{.parent = true}}); // NOLINT
+        auto status       = m_impl->process->start(params, reproc::options{.redirect{.parent = true}});
 
         if (!status)
         {
