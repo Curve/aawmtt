@@ -7,6 +7,8 @@
 
 namespace awmtt
 {
+    namespace fs = std::filesystem;
+
     class inotify
     {
         struct impl;
@@ -24,12 +26,12 @@ namespace awmtt
         inotify(inotify &&) noexcept;
 
       public:
-        void watch(const std::filesystem::path &);
+        void watch(const fs::path &);
 
       public:
-        void set_callback(std::function<void(const std::string &)> &&);
+        void start(std::function<void(const std::string &)> &&, std::chrono::seconds timeout);
 
       public:
-        static std::optional<inotify> init(std::chrono::seconds timeout);
+        static std::optional<inotify> init();
     };
 } // namespace awmtt

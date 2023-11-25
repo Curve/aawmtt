@@ -1,10 +1,8 @@
 #include "logger.hpp"
 #include "inotify.hpp"
 
-#include <mutex>
 #include <vector>
 #include <thread>
-#include <iostream>
 
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -16,10 +14,6 @@ namespace awmtt
     {
         int fd;
         std::vector<int> directories;
-
-      public:
-        std::mutex mutex;
-        std::function<void(const std::string &)> callback;
 
       public:
         std::jthread thread;
@@ -42,23 +36,74 @@ namespace awmtt
         close(m_impl->fd);
     }
 
-    inotify::inotify(inotify &&other) noexcept : m_impl(std::move(other.m_impl))
-    {
-        other.m_impl.reset();
-    }
+    inotify::inotify(inotify &&other) noexcept : m_impl(std::exchange(other.m_impl, nullptr)) {}
 
     void inotify::watch(const std::filesystem::path &path)
     {
         inotify_add_watch(m_impl->fd, path.c_str(), IN_CLOSE_WRITE);
     }
 
-    void inotify::set_callback(std::function<void(const std::string &)> &&callback)
+    void inotify::start(std::function<void(const std::string &)> &&callback, std::chrono::seconds timeout)
     {
-        std::lock_guard lock(m_impl->mutex);
-        m_impl->callback = std::move(callback);
+        auto fn = [this, callback, timeout](const std::stop_token &token)
+        {
+            pollfd fs[] = {
+                pollfd{.fd = m_impl->fd, .events = POLLIN, .revents = {}},
+            };
+
+            while (!token.stop_requested())
+            {
+                auto status = poll(fs, 1, static_cast<int>(timeout.count()));
+
+                if (status == 0)
+                {
+                    continue;
+                }
+
+                if (status < 0)
+                {
+                    logger::get()->error("poll() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
+                    continue;
+                }
+
+                std::size_t len{};
+                ioctl(m_impl->fd, FIONREAD, &len);
+
+                auto buffer = std::make_unique<char[]>(len);
+                auto rd     = read(m_impl->fd, buffer.get(), len);
+
+                if (rd == 0)
+                {
+                    continue;
+                }
+
+                if (rd < 0)
+                {
+                    logger::get()->warn("read() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
+                    continue;
+                }
+
+                for (auto offset = 0u; offset < len;)
+                {
+                    auto *event = reinterpret_cast<inotify_event *>(buffer.get() + offset);
+                    offset += sizeof(inotify_event) + event->len;
+
+                    if (!callback)
+                    {
+                        continue;
+                    }
+
+                    callback(event->name);
+                }
+            }
+
+            logger::get()->debug("stopped watching");
+        };
+
+        m_impl->thread = std::jthread{fn};
     }
 
-    std::optional<inotify> inotify::init(std::chrono::seconds timeout)
+    std::optional<inotify> inotify::init()
     {
         auto fd = inotify_init1(IN_CLOEXEC);
 
@@ -67,63 +112,8 @@ namespace awmtt
             return std::nullopt;
         }
 
-        auto rtn = inotify{};
+        auto rtn       = inotify{};
         rtn.m_impl->fd = fd;
-
-        rtn.m_impl->thread = std::jthread{[impl = rtn.m_impl.get(), timeout](const std::stop_token &token) {
-            pollfd fs[1] = {pollfd{.fd = impl->fd, .events = POLLIN, .revents = {}}};
-
-            while (!token.stop_requested())
-            {
-                auto status = poll(fs, 1, static_cast<int>(timeout.count()));
-
-                if (!status)
-                {
-                    continue;
-                }
-
-                if (status == -1)
-                {
-                    logger::get()->error("poll() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
-                    continue;
-                }
-
-                std::size_t len{};
-                ioctl(impl->fd, FIONREAD, &len);
-
-                auto buffer = std::make_unique<char[]>(len);
-                auto rd = read(impl->fd, buffer.get(), len);
-
-                if (rd == -1)
-                {
-                    logger::get()->warn("read() failed with: {} ({})", errno, std::strerror(errno)); // NOLINT
-                    continue;
-                }
-
-                if (rd == 0)
-                {
-                    logger::get()->debug("EOF reached");
-                    continue;
-                }
-
-                std::lock_guard guard(impl->mutex);
-                auto offset = 0u;
-
-                while (offset < len)
-                {
-                    auto *event = reinterpret_cast<inotify_event *>(buffer.get() + offset);
-
-                    if (impl->callback)
-                    {
-                        impl->callback(event->name);
-                    }
-
-                    offset += sizeof(inotify_event) + event->len;
-                }
-            }
-
-            logger::get()->debug("inotify finished");
-        }};
 
         return rtn;
     }
