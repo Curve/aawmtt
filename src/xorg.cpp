@@ -1,6 +1,5 @@
 #include "xorg.hpp"
 
-#include <chrono>
 #include <cstdlib>
 #include <X11/Xlib.h>
 #include <fmt/format.h>
@@ -14,10 +13,7 @@ namespace awmtt
 
     display::display() : m_impl(std::make_unique<impl>()) {}
 
-    display::display(display &&other) noexcept : m_impl(std::move(other.m_impl))
-    {
-        other.m_impl.reset();
-    }
+    display::display(display &&other) noexcept : m_impl(std::exchange(other.m_impl, nullptr)) {}
 
     display::~display()
     {
@@ -54,22 +50,25 @@ namespace awmtt
     std::pair<std::future<display>, std::stop_source> display::connect(std::size_t id)
     {
         using namespace std::chrono_literals;
-        auto name = fmt::format(":{}", id);
+
+        auto name   = fmt::format(":{}", id);
         auto source = std::stop_source{};
 
-        return std::make_pair(std::async([name, source]() {
-                                  Display *x_display{};
+        auto fn = [name, token = source.get_token()]()
+        {
+            Display *disp{};
 
-                                  while (!source.get_token().stop_requested() && !(x_display = XOpenDisplay(name.c_str())))
-                                  {
-                                      std::this_thread::sleep_for(100ms);
-                                  }
+            while (!token.stop_requested() && !(disp = XOpenDisplay(name.c_str())))
+            {
+                std::this_thread::sleep_for(100ms);
+            }
 
-                                  display rtn;
-                                  rtn.m_impl->display = x_display;
+            display rtn;
+            rtn.m_impl->display = disp;
 
-                                  return rtn;
-                              }),
-                              source);
+            return rtn;
+        };
+
+        return std::make_pair(std::async(std::launch::async, fn), source);
     }
 } // namespace awmtt
