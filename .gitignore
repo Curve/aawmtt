@@ -1,3 +1,4 @@
+private
 build
+
 .vscode
-include/constants.hpp
