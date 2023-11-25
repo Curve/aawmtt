@@ -1,8 +1,8 @@
 #pragma once
 #include <string_view>
 
-namespace awmtt
+namespace awmtt::constants
 {
-    constexpr std::string_view name = "${PROJECT_NAME}";
+    constexpr std::string_view name    = "${PROJECT_NAME}";
     constexpr std::string_view version = "${PROJECT_VERSION}";
-} // namespace awmtt
+} // namespace awmtt::constants
