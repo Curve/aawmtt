@@ -1,36 +1,38 @@
 #pragma once
-#include <vector>
+
 #include <string>
-#include <cstdint>
+#include <vector>
 #include <optional>
 #include <filesystem>
 
 namespace awmtt
 {
-    enum class restart_strategy
+    namespace fs = std::filesystem;
+
+    enum class strategy
     {
         restart,
-        sighup,
+        signal,
     };
 
     struct settings
     {
         std::string xephyr;
+        std::vector<std::string> xephyr_args;
+
         std::string awesome;
+        std::vector<std::string> awesome_args;
+
+        fs::path watch;
+        fs::path config;
+        strategy restart;
 
         std::string size;
         std::optional<std::size_t> display;
 
-        std::filesystem::path config;
-
-        restart_strategy restart_method;
-        std::vector<std::string> xephyr_args;
-        std::vector<std::string> awesome_args;
-
         bool reload;
         bool recursive;
-        std::filesystem::path watch;
     };
 
-    std::optional<settings> parse(int argc, char **args);
+    settings parse(int argc, char **argv);
 } // namespace awmtt

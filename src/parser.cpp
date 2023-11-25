@@ -1,80 +1,198 @@
 #include "parser.hpp"
 
-#include "utils.hpp"
 #include "logger.hpp"
 #include "constants.hpp"
 
-#include <regex>
-#include <CLI/CLI.hpp>
+#include <iostream>
+
+#include <fmt/core.h>
+#include <range/v3/all.hpp>
 
 namespace awmtt
 {
-    std::optional<settings> parse(int argc, char **args)
+    void print_usage()
     {
-        CLI::App parser{fmt::format("{} - v{}", awmtt::name, awmtt::version)};
-        parser.get_formatter()->column_width(60);
+        static constexpr auto usage = R"(
+{0} - v{1}
 
-        settings rtn{};
+Usage: 
+    {0} 
+    {0} [...]
 
-        parser.add_option("-x,--xephyr", rtn.xephyr, "Location of xephyr binary")->default_val("Xephyr");
-        parser.add_option("-a,--awesome", rtn.awesome, "Location of awesome binary")->default_val("awesome");
+Options:
+    -h --help                   Print usage
+    
+    -x --xephyr     <path>      Explicitly specify xephyr path 
+    --xephyr-args   <args>      Arguments used to invoke xephyr (Default: "-ac -br -noreset")
+    
+    -a --awesome    <path>      Explicitly specify awesome path
+    --awesome-args  <args>      Additional awesome arguments (e.g. "--screen off")
+    
+    -c --config     <path>      Location of the awesome config to use (Default: "~/.config/awesome/rc.lua")
+    -w --watch      <path>      Directory to watch for changes (Default: Parent directory of config)
+    -m --mode       <enum>      Awesome restart strategy ["r" = restart, "s" = SIGHUP] (Default: "s")
+    
+    -s --size       <string>    Xephyr window size (Default: "1920x1080")
+    -d --display    <number>    X11 Display to use (Default: Free Display)
+    
+    --no-reload                 Disable automatic reload
+    --no-recursive              Disable recursive directory watch
+)";
 
-        parser.add_option("-d,--display", rtn.display, "The Xorg display to use");
-        parser.add_option("-s,--size", rtn.size, "Size for the xephyr window")->default_val("1920x1080")->ignore_case();
+        std::cout << fmt::format(usage, constants::name, constants::version) << std::endl;
+    };
 
-        parser.add_option("-r,--reload", rtn.reload, "Enable/Disable auto-reload")->default_val(true);
-        parser.add_option("-R,--recursive", rtn.recursive, "Watch files recursively")->default_val(true);
-        parser.add_option("-m,--restart-method", rtn.restart_method, "Method used to restart awesome (0 = restart, 1 = sighup)")->default_val(restart_strategy::sighup);
+    template <typename A, typename... T>
+    bool has(A &args, T &&...arg)
+    {
+        return (ranges::contains(args, arg) || ...);
+    }
 
-        std::string config;
-        parser.add_option("-c,--config", config, "AwesomeWM config to load")->default_val("~/.config/awesome/rc.lua");
+    template <typename A, typename... T>
+    auto get(A &args, T &&...arg) -> std::optional<typename A::value_type>
+    {
+        auto indexed = args | ranges::views::enumerate;
 
-        std::optional<std::string> watch;
-        parser.add_option("-w,--watch", watch, "Directory to watch for auto-reload");
-
-        parser.add_option("--awesome-args", rtn.awesome_args, "Additional arguments for awesome")->delimiter(',');
-        parser.add_option("--xephyr-args", rtn.xephyr_args, "Arguments for xephyr")->delimiter(',')->default_val(std::vector<std::string>{"-ac", "-br", "-noreset"});
-
-        try
+        auto pred = [&](const auto &_a, const auto &_b)
         {
-            parser.parse(argc, args);
-        }
-        catch (const CLI::ParseError &e)
+            const auto &[i1, a] = _a;
+            const auto &[i2, b] = _b;
+
+            return i1 == i2 - 1 && ((a == arg) || ...);
+        };
+
+        auto it = ranges::adjacent_find(indexed, pred);
+
+        if (it == indexed.end())
         {
-            parser.exit(e);
             return std::nullopt;
         }
 
-        std::regex validator{R"re(\d+x\d+)re"};
+        return std::get<1>(*std::next(it));
+    }
 
-        if (!std::regex_match(rtn.size, validator))
+    fs::path parse_path(std::string path)
+    {
+        if (auto tilde = path.find('~'); tilde != std::string::npos)
         {
-            logger::get()->error("Invalid size: {}", rtn.size);
-            std::cout << parser.help() << std::endl;
-            return std::nullopt;
+            auto *home = std::getenv("HOME");
+            path       = path.replace(tilde, 1, home);
         }
 
-        rtn.config = parse_path(config);
+        auto rtn = fs::path{path};
 
-        if (!std::filesystem::exists(rtn.config))
+        if (fs::is_symlink(rtn))
         {
-            awmtt::logger::get()->error("Config '{}' doesn't exist", rtn.config.string());
-            return std::nullopt;
+            rtn = fs::read_symlink(rtn);
         }
 
-        if (watch.has_value())
+        if (!fs::exists(rtn))
         {
-            rtn.watch = parse_path(watch.value());
+            logger::get()->warn("'{}' does not exist", rtn.string());
+            return rtn;
+        }
+
+        return fs::canonical(rtn);
+    }
+
+    settings parse(int argc, char **argv)
+    {
+        settings rtn = {
+            .xephyr      = "Xephyr",
+            .xephyr_args = {"-ac", "-br", "-noreset"},
+
+            .awesome      = "awesome",
+            .awesome_args = {},
+
+            .watch   = {},
+            .config  = {},
+            .restart = strategy::signal,
+
+            .size    = "1920x1080",
+            .display = {},
+
+            .reload    = true,
+            .recursive = true,
+        };
+
+        auto *c_argv = const_cast<const char **>(argv);
+        std::vector<std::string> args(c_argv, c_argv + argc);
+
+        if (has(args, "-h", "--help"))
+        {
+            print_usage();
+            exit(0);
+        }
+
+        if (auto arg = get(args, "-x", "--xephyr"); arg)
+        {
+            rtn.xephyr = parse_path(arg.value());
+        }
+        if (auto arg = get(args, "--xephyr-args"); arg)
+        {
+            rtn.xephyr_args = arg.value() | ranges::views::split(' ') | ranges::to<std::vector<std::string>>;
+        }
+
+        if (auto arg = get(args, "-a", "--awesome"); arg)
+        {
+            rtn.awesome = parse_path(arg.value());
+        }
+        if (auto arg = get(args, "--awesome-args"); arg)
+        {
+            rtn.awesome_args = arg.value() | ranges::views::split(' ') | ranges::to<std::vector<std::string>>;
+        }
+
+        if (auto arg = get(args, "-c", "--config"); arg)
+        {
+            rtn.config = parse_path(arg.value());
+        }
+        else
+        {
+            rtn.config = parse_path("~/.config/awesome/rc.lua");
+        }
+        if (auto arg = get(args, "-w", "--watch"); arg)
+        {
+            rtn.watch = parse_path(arg.value());
         }
         else
         {
             rtn.watch = rtn.config.parent_path();
         }
-
-        if (!std::filesystem::exists(rtn.watch))
+        if (auto arg = get(args, "-m", "--mode"); arg)
         {
-            awmtt::logger::get()->warn("Watch directory '{}' doesn't exist", rtn.watch.string());
+            rtn.restart = arg.value() == "r" ? strategy::restart : strategy::signal;
+        }
+
+        if (auto arg = get(args, "-s", "--size"); arg)
+        {
+            if (!std::regex_match(arg.value(), std::regex{"\\d+x\\d+"}))
+            {
+                logger::get()->error("Failed to parse size");
+                print_usage();
+                exit(1);
+            }
+
+            rtn.size = arg.value();
+        }
+        if (auto arg = get(args, "-d", "--display"); arg)
+        {
+            if (!std::regex_match(arg.value(), std::regex{"\\d+"}))
+            {
+                logger::get()->error("Failed to parse display");
+                print_usage();
+                exit(1);
+            }
+
+            rtn.display = std::stoll(arg.value());
+        }
+
+        if (has(args, "--no-reload"))
+        {
             rtn.reload = false;
+        }
+        if (has(args, "--no-recursive"))
+        {
+            rtn.recursive = false;
         }
 
         return rtn;
