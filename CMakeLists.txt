@@ -43,28 +43,28 @@ target_include_directories(${PROJECT_NAME} PRIVATE "include" "private")
 
 include("cmake/cpm.cmake")
 
-CPMFindPackage(
+CPMAddPackage(
   NAME              fmt
-  GIT_TAG           10.1.1
+  GIT_TAG           11.0.2
   GIT_REPOSITORY    "https://github.com/fmtlib/fmt"
   EXCLUDE_FROM_ALL  ON
 )
 
-CPMFindPackage(
+CPMAddPackage(
   NAME              spdlog
-  VERSION           1.12.0
+  VERSION           1.15.0
   GIT_REPOSITORY    "https://github.com/gabime/spdlog"
   EXCLUDE_FROM_ALL  ON
 )
 
-CPMFindPackage(
+CPMAddPackage(
   NAME              range-v3
   GIT_TAG           0.12.0
   GIT_REPOSITORY    "https://github.com/ericniebler/range-v3"
   EXCLUDE_FROM_ALL  ON
 )
 
-CPMFindPackage(
+CPMAddPackage(
   NAME              reproc
   GIT_TAG           1c07bdb
   GIT_REPOSITORY    "https://github.com/DaanDeMeyer/reproc"
@@ -75,7 +75,7 @@ CPMFindPackage(
 find_package(X11 REQUIRED)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${X11_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} PRIVATE reproc++ fmt range-v3::meta spdlog::spdlog ${X11_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} PRIVATE reproc++ fmt::fmt range-v3::meta spdlog::spdlog ${X11_LIBRARIES})
 
 # -------------------------------------------------------------------------------------------------------------------------------
 # Install executable
