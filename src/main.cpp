@@ -8,6 +8,7 @@
 #include "signal.hpp"
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 using namespace awmtt;
 
